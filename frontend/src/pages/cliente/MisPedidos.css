@@ -1,0 +1,31 @@
+.mis-pedidos {
+  padding: 36px 20px 60px;
+}
+.mis-pedidos-header h2 {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 500;
+  margin: 0 0 4px;
+}
+.mis-pedidos-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 30px;
+}
+.mis-pedidos-lista {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 16px;
+}
+.mis-pedidos-item {
+  padding: 16px 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.mis-pedidos-item-titulo {
+  font-weight: 700;
+}

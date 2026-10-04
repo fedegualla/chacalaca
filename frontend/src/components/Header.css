@@ -1,0 +1,71 @@
+.tienda-header {
+  background: #fff;
+  position: sticky;
+  top: 0;
+  z-index: 30;
+}
+
+.tienda-header-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 20px 16px;
+}
+
+.tienda-logo {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-size: 1.7rem;
+  font-weight: 600;
+  color: var(--color-ink);
+  letter-spacing: 0.02em;
+}
+
+.tienda-header-acciones {
+  display: flex;
+  gap: 22px;
+}
+
+.tienda-icon-btn {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  background: none;
+  border: none;
+  color: var(--color-text);
+  font-size: 0.76rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.tienda-icon-btn:hover {
+  color: var(--color-primary-dark);
+}
+.tienda-icon-btn span {
+  display: none;
+}
+
+.tienda-nav {
+  border-top: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border);
+}
+.tienda-nav-inner {
+  display: flex;
+  justify-content: center;
+  gap: 34px;
+  padding: 13px 20px;
+  font-size: 0.76rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--color-text-muted);
+}
+.tienda-nav-inner a:hover {
+  color: var(--color-ink);
+}
+
+@media (min-width: 640px) {
+  .tienda-icon-btn span {
+    display: inline;
+  }
+}

@@ -1,0 +1,127 @@
+.cart-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(30, 20, 50, 0.35);
+  z-index: 100;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.cart-drawer {
+  width: min(420px, 100%);
+  background: #fff;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  box-shadow: -12px 0 30px rgba(0, 0, 0, 0.12);
+}
+
+.cart-drawer-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--color-border);
+}
+.cart-drawer-header h3 {
+  margin: 0;
+}
+.cart-close {
+  background: var(--color-bg-soft);
+  border: none;
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+}
+
+.cart-vacio {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-muted);
+  gap: 8px;
+}
+.cart-vacio span {
+  font-size: 2.5rem;
+}
+
+.cart-items {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 20px;
+}
+
+.cart-item {
+  display: flex;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--color-border);
+}
+.cart-item-img {
+  width: 64px;
+  height: 64px;
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.6rem;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+.cart-item-img img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.cart-item-info {
+  flex: 1;
+}
+.cart-item-nombre {
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+.cart-item-variante {
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+  margin: 2px 0;
+}
+.cart-item-precio {
+  font-weight: 700;
+  color: var(--color-primary-dark);
+  font-size: 0.85rem;
+}
+.cart-item-cantidad {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+.cart-item-cantidad button {
+  border: 1px solid var(--color-border);
+  background: #fff;
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+}
+.cart-item-quitar {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: var(--color-accent);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.cart-drawer-footer {
+  padding: 18px 20px 22px;
+  border-top: 1px solid var(--color-border);
+}
+.cart-subtotal {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 14px;
+  font-size: 1.05rem;
+}
