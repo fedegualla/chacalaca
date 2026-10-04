@@ -2,79 +2,74 @@ import bcrypt from "bcryptjs";
 import { pool } from "./pool.js";
 
 async function seed() {
+  const client = await pool.connect();
   try {
-    const { rows: sucursales } = await pool.query(`
-      INSERT INTO sucursales (nombre, direccion)
-      VALUES ('Local principal', 'Dirección de prueba 123')
-      RETURNING id, nombre
-    `);
-    const [local] = sucursales;
+    await client.query("BEGIN");
 
     const passwordHash = await bcrypt.hash("prueba123", 10);
-    await pool.query(
-      `INSERT INTO usuarios (nombre, email, password_hash, rol, sucursal_id)
-       VALUES
-        ('Admin Prueba', 'admin@prueba.com', $1, 'admin', $2),
-        ('Vendedor Prueba', 'vendedor@prueba.com', $1, 'vendedor', $2)`,
-      [passwordHash, local.id]
+    await client.query(
+      `INSERT INTO usuarios (nombre, email, password_hash, rol) VALUES
+        ('Administrador', 'admin@prueba.com', $1, 'admin'),
+        ('Vendedor', 'vendedor@prueba.com', $1, 'vendedor')
+       ON CONFLICT (email) DO NOTHING`,
+      [passwordHash]
     );
 
-    const { rows: categorias } = await pool.query(`
-      INSERT INTO categorias (nombre, slug, icono, orden) VALUES
-        ('Remeras', 'remeras', '👕', 1),
-        ('Pantalones', 'pantalones', '👖', 2),
-        ('Camperas', 'camperas', '🧥', 3),
-        ('Vestidos', 'vestidos', '👗', 4),
-        ('Calzado', 'calzado', '👟', 5),
-        ('Accesorios', 'accesorios', '🧢', 6)
-      RETURNING id, nombre, slug
-    `);
-    const catPorSlug = Object.fromEntries(categorias.map((c) => [c.slug, c]));
+    const categorias = [
+      { nombre: "Remeras", orden: 1 },
+      { nombre: "Pantalones", orden: 2 },
+      { nombre: "Camperas", orden: 3 },
+      { nombre: "Conjuntos", orden: 4 },
+      { nombre: "Accesorios", orden: 5 }
+    ];
+    const categoriaIds = {};
+    for (const cat of categorias) {
+      const { rows } = await client.query(
+        "INSERT INTO categorias (nombre, orden) VALUES ($1, $2) RETURNING id",
+        [cat.nombre, cat.orden]
+      );
+      categoriaIds[cat.nombre] = rows[0].id;
+    }
 
-    const productosDemo = [
-      { nombre: "Remera Oversize Básica", categoria: "remeras", marca: "Chacalaca", precio: 15000, talles: ["S", "M", "L", "XL"], colores: ["Negro", "Blanco", "Beige"] },
-      { nombre: "Remera Estampada", categoria: "remeras", marca: "Chacalaca", precio: 17500, talles: ["S", "M", "L"], colores: ["Blanco", "Gris"] },
-      { nombre: "Jean Mom Fit", categoria: "pantalones", marca: "Chacalaca", precio: 38000, talles: ["36", "38", "40", "42"], colores: ["Azul"] },
-      { nombre: "Pantalón Cargo", categoria: "pantalones", marca: "Chacalaca", precio: 34000, talles: ["S", "M", "L", "XL"], colores: ["Verde", "Beige"] },
-      { nombre: "Campera Puffer", categoria: "camperas", marca: "Chacalaca", precio: 62000, talles: ["S", "M", "L"], colores: ["Negro", "Bordo"] },
-      { nombre: "Vestido Lino", categoria: "vestidos", marca: "Chacalaca", precio: 29500, talles: ["S", "M", "L"], colores: ["Blanco", "Celeste"] },
-      { nombre: "Zapatillas Urbanas", categoria: "calzado", marca: "Chacalaca", precio: 48000, talles: ["37", "38", "39", "40", "41"], colores: ["Blanco"] },
-      { nombre: "Gorra Visera Curva", categoria: "accesorios", marca: "Chacalaca", precio: 9500, talles: ["Único"], colores: ["Negro", "Blanco"] }
+    const productos = [
+      { nombre: "Remera estampada dinosaurio", categoria: "Remeras", marca: "Chacalaca Kids", costo: 3500, venta: 7900, talles: ["2", "4", "6", "8"], colores: ["Celeste", "Verde"] },
+      { nombre: "Pantalón de jogging", categoria: "Pantalones", marca: "Chacalaca Kids", costo: 4200, venta: 9500, talles: ["2", "4", "6", "8", "10"], colores: ["Gris", "Negro"] },
+      { nombre: "Campera inflable", categoria: "Camperas", marca: "Chacalaca Kids", costo: 9800, venta: 21000, talles: ["4", "6", "8"], colores: ["Rojo", "Azul"] },
+      { nombre: "Conjunto buzo + pantalón", categoria: "Conjuntos", marca: "Chacalaca Kids", costo: 7200, venta: 15800, talles: ["2", "4", "6"], colores: ["Rosa", "Beige"] },
+      { nombre: "Gorro de lana", categoria: "Accesorios", marca: "Chacalaca Kids", costo: 1200, venta: 3200, talles: ["Único"], colores: ["Multicolor"] }
     ];
 
-    for (const p of productosDemo) {
-      const { rows: prodRows } = await pool.query(
-        `INSERT INTO productos (nombre, categoria_id, marca, precio_costo, precio_venta, destacado)
-         VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
-        [p.nombre, catPorSlug[p.categoria].id, p.marca, Math.round(p.precio * 0.5), p.precio, Math.random() > 0.5]
+    for (const p of productos) {
+      const { rows } = await client.query(
+        `INSERT INTO productos (nombre, categoria_id, marca, precio_costo, precio_venta)
+         VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+        [p.nombre, categoriaIds[p.categoria], p.marca, p.costo, p.venta]
       );
-      const productoId = prodRows[0].id;
-
+      const productoId = rows[0].id;
       for (const talle of p.talles) {
         for (const color of p.colores) {
-          const { rows: varRows } = await pool.query(
-            `INSERT INTO variantes_producto (producto_id, talle, color) VALUES ($1,$2,$3) RETURNING id`,
-            [productoId, talle, color]
-          );
-          await pool.query(
-            "INSERT INTO stock (variante_id, sucursal_id, cantidad) VALUES ($1,$2,$3)",
-            [varRows[0].id, local.id, Math.floor(Math.random() * 15) + 1]
+          const sku = `${productoId}-${talle}-${color}`.toUpperCase().replace(/\s+/g, "");
+          await client.query(
+            `INSERT INTO variantes_producto (producto_id, talle, color, sku, stock_actual, stock_minimo)
+             VALUES ($1, $2, $3, $4, $5, 2)`,
+            [productoId, talle, color, sku, Math.floor(Math.random() * 15) + 1]
           );
         }
       }
     }
 
-    console.log("✅ Datos de prueba creados:");
-    console.log(`   Sucursal: ${local.nombre} (id ${local.id})`);
-    console.log("   Usuario admin    → admin@prueba.com    / prueba123");
-    console.log("   Usuario vendedor → vendedor@prueba.com / prueba123");
-    console.log(`   ${productosDemo.length} productos con variantes de talle/color cargados.`);
+    await client.query("COMMIT");
+    console.log("Seed cargado: 2 usuarios, 5 categorías, 5 productos con variantes y stock.");
   } catch (err) {
-    console.error("❌ Error cargando datos de prueba:", err.message);
-    process.exitCode = 1;
+    await client.query("ROLLBACK");
+    throw err;
   } finally {
+    client.release();
     await pool.end();
   }
 }
 
-seed();
+seed().catch((err) => {
+  console.error("Error al cargar el seed:", err.message);
+  process.exit(1);
+});

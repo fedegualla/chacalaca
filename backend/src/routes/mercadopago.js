@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { pool } from "../db/pool.js";
 import { consultarPago, validarFirmaWebhook } from "../services/mercadopago.js";
-import { revertirStockPedido } from "./pedidos.js";
+import { revertirStockVenta } from "./ventas.js";
 
 export const mercadopagoRouter = Router();
 
@@ -28,34 +28,34 @@ mercadopagoRouter.post("/webhook", async (req, res) => {
 
   try {
     const pago = await consultarPago(dataId);
-    const pedidoId = pago.external_reference;
-    if (!pedidoId) return res.sendStatus(200);
+    const ventaId = pago.external_reference;
+    if (!ventaId) return res.sendStatus(200);
 
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
-      const { rows } = await client.query("SELECT * FROM pedidos WHERE id = $1 FOR UPDATE", [pedidoId]);
-      const pedido = rows[0];
+      const { rows } = await client.query("SELECT * FROM ventas WHERE id = $1 FOR UPDATE", [ventaId]);
+      const venta = rows[0];
 
-      // Pedido inexistente, o ya resuelto antes (reintento del webhook): no hacemos nada más.
-      if (!pedido || pedido.estado_pago !== "pendiente") {
+      // Venta inexistente, o ya resuelta antes (reintento del webhook): no hacemos nada más.
+      if (!venta || venta.estado_pago !== "pendiente") {
         await client.query("ROLLBACK");
         return res.sendStatus(200);
       }
 
       if (pago.status === "approved") {
         await client.query(
-          "UPDATE pedidos SET estado_pago = 'aprobado', estado_pedido = 'confirmado', mp_payment_id = $1 WHERE id = $2",
-          [String(pago.id), pedidoId]
+          "UPDATE ventas SET estado_pago = 'aprobado', mp_payment_id = $1 WHERE id = $2",
+          [String(pago.id), ventaId]
         );
       } else if (["rejected", "cancelled"].includes(pago.status)) {
-        await revertirStockPedido(client, pedidoId);
+        await revertirStockVenta(client, ventaId, null);
         await client.query(
-          "UPDATE pedidos SET estado_pago = 'rechazado', estado_pedido = 'cancelado', mp_payment_id = $1 WHERE id = $2",
-          [String(pago.id), pedidoId]
+          "UPDATE ventas SET estado_pago = 'rechazado', estado_venta = 'cancelada', mp_payment_id = $1 WHERE id = $2",
+          [String(pago.id), ventaId]
         );
       }
-      // Otros estados (in_process, pending) todavía no son definitivos: no tocamos el pedido.
+      // Otros estados (in_process, pending) todavía no son definitivos: no tocamos la venta.
 
       await client.query("COMMIT");
     } catch (err) {
@@ -70,4 +70,16 @@ mercadopagoRouter.post("/webhook", async (req, res) => {
     console.error("Error procesando webhook de Mercado Pago:", err.message);
     res.sendStatus(200);
   }
+});
+
+// GET /api/mercadopago/volver/:ventaId — back_url a la que Mercado Pago
+// redirige el celular del cliente después de pagar el QR. Solo muestra un
+// mensaje simple; la pantalla de venta del vendedor se actualiza sola
+// consultando el estado de la venta, no depende de esta redirección.
+mercadopagoRouter.get("/volver/:ventaId", (req, res) => {
+  res.send(`<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><title>Chacalaca</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>body{font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#fafafa;color:#333;text-align:center;padding:24px}</style>
+</head><body><div><h2>¡Gracias!</h2><p>Ya podés cerrar esta ventana y volver con el vendedor.</p></div></body></html>`);
 });

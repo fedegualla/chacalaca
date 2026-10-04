@@ -1,28 +1,26 @@
 import { Router } from "express";
 import { pool } from "../db/pool.js";
-import { requiereRol } from "../middleware/auth.js";
+import { requiereAuth, requiereAdmin } from "../middleware/auth.js";
+import { registrarMovimiento } from "../services/stock.js";
 
 export const productosRouter = Router();
-const soloAdmin = requiereRol("admin");
 
-// GET /api/productos?q=&categoria_id= — listado para el panel admin (el router
-// padre ya exige requiereAuth, staff).
-productosRouter.get("/", async (req, res) => {
-  const { q = "", categoria_id = "" } = req.query;
+// GET /api/productos?q=&categoria_id=&soloActivos=
+productosRouter.get("/", requiereAuth, async (req, res) => {
+  const { q = "", categoria_id = "", soloActivos = "true" } = req.query;
   try {
     const { rows } = await pool.query(
       `SELECT p.*, c.nombre AS categoria_nombre,
-              COALESCE(SUM(s.cantidad), 0) AS stock_total,
-              COUNT(DISTINCT v.id) AS cantidad_variantes
+              COALESCE(SUM(v.stock_actual), 0) AS stock_total
        FROM productos p
        LEFT JOIN categorias c ON c.id = p.categoria_id
-       LEFT JOIN variantes_producto v ON v.producto_id = p.id
-       LEFT JOIN stock s ON s.variante_id = v.id
-       WHERE p.nombre ILIKE '%' || $1 || '%'
+       LEFT JOIN variantes_producto v ON v.producto_id = p.id AND v.activo = true
+       WHERE ($1 = '' OR p.nombre ILIKE '%' || $1 || '%' OR p.marca ILIKE '%' || $1 || '%')
          AND ($2 = '' OR p.categoria_id = $2::int)
+         AND ($3 = 'false' OR p.activo = true)
        GROUP BY p.id, c.nombre
-       ORDER BY p.creado_en DESC`,
-      [q, categoria_id]
+       ORDER BY p.nombre`,
+      [q, categoria_id, soloActivos]
     );
     res.json(rows);
   } catch (err) {
@@ -30,78 +28,100 @@ productosRouter.get("/", async (req, res) => {
   }
 });
 
-// GET /api/productos/:id — detalle con variantes, stock por sucursal e imágenes
-productosRouter.get("/:id", async (req, res) => {
+// GET /api/productos/alertas/stock-bajo
+productosRouter.get("/alertas/stock-bajo", requiereAuth, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT v.id AS variante_id, v.talle, v.color, v.stock_actual, v.stock_minimo,
+              p.id AS producto_id, p.nombre AS producto_nombre
+       FROM variantes_producto v
+       JOIN productos p ON p.id = v.producto_id
+       WHERE v.activo = true AND p.activo = true AND v.stock_actual <= v.stock_minimo
+       ORDER BY v.stock_actual ASC, p.nombre`
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/productos/:id
+productosRouter.get("/:id", requiereAuth, async (req, res) => {
   try {
     const { rows } = await pool.query(
       `SELECT p.*, c.nombre AS categoria_nombre FROM productos p
-       LEFT JOIN categorias c ON c.id = p.categoria_id
-       WHERE p.id = $1`,
+       LEFT JOIN categorias c ON c.id = p.categoria_id WHERE p.id = $1`,
       [req.params.id]
     );
     const producto = rows[0];
     if (!producto) return res.status(404).json({ error: "Producto no encontrado." });
-
     const { rows: variantes } = await pool.query(
-      `SELECT v.*, COALESCE(
-                (SELECT json_agg(json_build_object('sucursal_id', s.sucursal_id, 'cantidad', s.cantidad))
-                 FROM stock s WHERE s.variante_id = v.id),
-                '[]'
-              ) AS stock
-       FROM variantes_producto v
-       WHERE v.producto_id = $1
-       ORDER BY v.talle, v.color`,
+      "SELECT * FROM variantes_producto WHERE producto_id = $1 ORDER BY talle, color",
       [req.params.id]
     );
-
-    const { rows: imagenes } = await pool.query(
-      "SELECT * FROM imagenes_producto WHERE producto_id = $1 ORDER BY orden",
-      [req.params.id]
-    );
-
-    res.json({ ...producto, variantes, imagenes });
+    res.json({ ...producto, variantes });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// POST /api/productos
-// body: { nombre, descripcion?, categoria_id?, marca?, precio_costo?, precio_venta, imagen_url?, destacado? }
-productosRouter.post("/", soloAdmin, async (req, res) => {
-  const { nombre, descripcion, categoria_id, marca, precio_costo = 0, precio_venta, imagen_url, destacado = false } = req.body;
-  if (!nombre || precio_venta === undefined) {
-    return res.status(400).json({ error: "Nombre y precio de venta son obligatorios." });
-  }
+// POST /api/productos — crea el producto y, opcionalmente, sus variantes iniciales.
+// body: { nombre, descripcion?, categoria_id?, marca?, precio_costo, precio_venta,
+//          variantes?: [{ talle, color, stock_actual?, stock_minimo? }] }
+productosRouter.post("/", requiereAuth, requiereAdmin, async (req, res) => {
+  const { nombre, descripcion, categoria_id, marca, precio_costo, precio_venta, variantes = [] } = req.body;
+  if (!nombre?.trim()) return res.status(400).json({ error: "El nombre es obligatorio." });
+  const client = await pool.connect();
   try {
-    const { rows } = await pool.query(
-      `INSERT INTO productos (nombre, descripcion, categoria_id, marca, precio_costo, precio_venta, imagen_url, destacado)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-      [nombre, descripcion || null, categoria_id || null, marca || null, precio_costo, precio_venta, imagen_url || null, destacado]
+    await client.query("BEGIN");
+    const { rows } = await client.query(
+      `INSERT INTO productos (nombre, descripcion, categoria_id, marca, precio_costo, precio_venta)
+       VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+      [nombre.trim(), descripcion || null, categoria_id || null, marca || null, precio_costo || 0, precio_venta || 0]
     );
-    res.status(201).json(rows[0]);
+    const producto = rows[0];
+
+    for (const v of variantes) {
+      if (!v.talle?.trim() || !v.color?.trim()) continue;
+      const { rows: varRows } = await client.query(
+        `INSERT INTO variantes_producto (producto_id, talle, color, sku, stock_minimo)
+         VALUES ($1,$2,$3,$4,$5) RETURNING id`,
+        [producto.id, v.talle.trim(), v.color.trim(), v.sku || null, v.stock_minimo || 0]
+      );
+      const cantidadInicial = Number(v.stock_actual) || 0;
+      if (cantidadInicial > 0) {
+        await registrarMovimiento(client, {
+          variante_id: varRows[0].id,
+          tipo: "ingreso",
+          cantidad: cantidadInicial,
+          motivo: "Carga inicial de stock",
+          usuario_id: req.usuario.id
+        });
+      }
+    }
+
+    await client.query("COMMIT");
+    res.status(201).json(producto);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    await client.query("ROLLBACK");
+    res.status(400).json({ error: err.message });
+  } finally {
+    client.release();
   }
 });
 
 // PUT /api/productos/:id
-productosRouter.put("/:id", soloAdmin, async (req, res) => {
-  const { nombre, descripcion, categoria_id, marca, precio_costo, precio_venta, imagen_url, destacado, activo } = req.body;
+productosRouter.put("/:id", requiereAuth, requiereAdmin, async (req, res) => {
+  const { nombre, descripcion, categoria_id, marca, precio_costo, precio_venta, activo } = req.body;
   try {
     const { rows } = await pool.query(
       `UPDATE productos SET
-         nombre = COALESCE($1, nombre),
-         descripcion = COALESCE($2, descripcion),
-         categoria_id = COALESCE($3, categoria_id),
-         marca = COALESCE($4, marca),
-         precio_costo = COALESCE($5, precio_costo),
-         precio_venta = COALESCE($6, precio_venta),
-         imagen_url = COALESCE($7, imagen_url),
-         destacado = COALESCE($8, destacado),
-         activo = COALESCE($9, activo),
-         actualizado_en = now()
-       WHERE id = $10 RETURNING *`,
-      [nombre, descripcion, categoria_id, marca, precio_costo, precio_venta, imagen_url, destacado, activo, req.params.id]
+        nombre = COALESCE($1, nombre), descripcion = COALESCE($2, descripcion),
+        categoria_id = $3, marca = COALESCE($4, marca),
+        precio_costo = COALESCE($5, precio_costo), precio_venta = COALESCE($6, precio_venta),
+        activo = COALESCE($7, activo), actualizado_en = now()
+       WHERE id = $8 RETURNING *`,
+      [nombre, descripcion, categoria_id ?? null, marca, precio_costo, precio_venta, activo, req.params.id]
     );
     if (!rows[0]) return res.status(404).json({ error: "Producto no encontrado." });
     res.json(rows[0]);
@@ -110,93 +130,61 @@ productosRouter.put("/:id", soloAdmin, async (req, res) => {
   }
 });
 
-// DELETE /api/productos/:id — baja lógica, conserva el historial de pedidos
-productosRouter.delete("/:id", soloAdmin, async (req, res) => {
+// DELETE /api/productos/:id — baja lógica (se mantiene el historial de ventas).
+productosRouter.delete("/:id", requiereAuth, requiereAdmin, async (req, res) => {
   try {
     await pool.query("UPDATE productos SET activo = false WHERE id = $1", [req.params.id]);
-    res.status(204).end();
+    res.sendStatus(204);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// ---------- IMÁGENES ----------
-
-productosRouter.post("/:id/imagenes", soloAdmin, async (req, res) => {
-  const { url, orden = 0 } = req.body;
-  if (!url) return res.status(400).json({ error: "Falta la url de la imagen." });
-  try {
-    const { rows } = await pool.query(
-      "INSERT INTO imagenes_producto (producto_id, url, orden) VALUES ($1,$2,$3) RETURNING *",
-      [req.params.id, url, orden]
-    );
-    res.status(201).json(rows[0]);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+// POST /api/productos/:id/variantes — agrega una variante nueva a un producto existente.
+productosRouter.post("/:id/variantes", requiereAuth, requiereAdmin, async (req, res) => {
+  const { talle, color, sku, stock_actual = 0, stock_minimo = 0 } = req.body;
+  if (!talle?.trim() || !color?.trim()) {
+    return res.status(400).json({ error: "Talle y color son obligatorios." });
   }
-});
-
-productosRouter.delete("/imagenes/:imagenId", soloAdmin, async (req, res) => {
-  try {
-    await pool.query("DELETE FROM imagenes_producto WHERE id = $1", [req.params.imagenId]);
-    res.status(204).end();
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ---------- VARIANTES (talle + color) Y STOCK ----------
-
-// POST /api/productos/:id/variantes
-// body: { talle, color, sku? }
-productosRouter.post("/:id/variantes", soloAdmin, async (req, res) => {
-  const { talle, color, sku } = req.body;
-  if (!talle || !color) return res.status(400).json({ error: "Talle y color son obligatorios." });
-
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
     const { rows } = await client.query(
-      `INSERT INTO variantes_producto (producto_id, talle, color, sku)
-       VALUES ($1,$2,$3,$4) RETURNING *`,
-      [req.params.id, talle, color, sku || null]
+      `INSERT INTO variantes_producto (producto_id, talle, color, sku, stock_minimo)
+       VALUES ($1,$2,$3,$4,$5) RETURNING *`,
+      [req.params.id, talle.trim(), color.trim(), sku || null, stock_minimo]
     );
     const variante = rows[0];
-
-    // Crea la fila de stock (en 0) para cada sucursal activa, así el panel
-    // de stock ya la muestra lista para cargar cantidades.
-    const { rows: sucursales } = await client.query("SELECT id FROM sucursales WHERE activa = true");
-    for (const s of sucursales) {
-      await client.query(
-        "INSERT INTO stock (variante_id, sucursal_id, cantidad) VALUES ($1,$2,0)",
-        [variante.id, s.id]
-      );
+    if (Number(stock_actual) > 0) {
+      await registrarMovimiento(client, {
+        variante_id: variante.id,
+        tipo: "ingreso",
+        cantidad: Number(stock_actual),
+        motivo: "Carga inicial de stock",
+        usuario_id: req.usuario.id
+      });
     }
-
     await client.query("COMMIT");
-    res.status(201).json(variante);
+    const { rows: actualizada } = await pool.query("SELECT * FROM variantes_producto WHERE id = $1", [variante.id]);
+    res.status(201).json(actualizada[0]);
   } catch (err) {
     await client.query("ROLLBACK");
-    if (err.code === "23505") {
-      return res.status(409).json({ error: "Ya existe una variante con ese talle y color." });
-    }
-    res.status(500).json({ error: err.message });
+    res.status(400).json({ error: err.message });
   } finally {
     client.release();
   }
 });
 
-productosRouter.put("/variantes/:varianteId", soloAdmin, async (req, res) => {
-  const { talle, color, sku, activo } = req.body;
+// PUT /api/variantes/:id — edita datos de la variante (no el stock: eso va por /movimiento).
+productosRouter.put("/variantes/:id", requiereAuth, requiereAdmin, async (req, res) => {
+  const { talle, color, sku, stock_minimo, activo } = req.body;
   try {
     const { rows } = await pool.query(
       `UPDATE variantes_producto SET
-         talle = COALESCE($1, talle),
-         color = COALESCE($2, color),
-         sku = COALESCE($3, sku),
-         activo = COALESCE($4, activo)
-       WHERE id = $5 RETURNING *`,
-      [talle, color, sku, activo, req.params.varianteId]
+        talle = COALESCE($1, talle), color = COALESCE($2, color), sku = $3,
+        stock_minimo = COALESCE($4, stock_minimo), activo = COALESCE($5, activo)
+       WHERE id = $6 RETURNING *`,
+      [talle, color, sku ?? null, stock_minimo, activo, req.params.id]
     );
     if (!rows[0]) return res.status(404).json({ error: "Variante no encontrada." });
     res.json(rows[0]);
@@ -205,30 +193,45 @@ productosRouter.put("/variantes/:varianteId", soloAdmin, async (req, res) => {
   }
 });
 
-productosRouter.delete("/variantes/:varianteId", soloAdmin, async (req, res) => {
+// POST /api/variantes/:id/movimiento — ingreso de mercadería o ajuste manual de stock.
+// body: { tipo: 'ingreso' | 'ajuste' | 'devolucion', cantidad, motivo? }
+productosRouter.post("/variantes/:id/movimiento", requiereAuth, requiereAdmin, async (req, res) => {
+  const { tipo, cantidad, motivo } = req.body;
+  if (!["ingreso", "ajuste", "devolucion"].includes(tipo)) {
+    return res.status(400).json({ error: "Tipo de movimiento inválido." });
+  }
+  const cant = Number(cantidad);
+  if (!cant) return res.status(400).json({ error: "La cantidad no puede ser 0." });
+  const client = await pool.connect();
   try {
-    await pool.query("UPDATE variantes_producto SET activo = false WHERE id = $1", [req.params.varianteId]);
-    res.status(204).end();
+    await client.query("BEGIN");
+    const stockActual = await registrarMovimiento(client, {
+      variante_id: req.params.id,
+      tipo,
+      cantidad: cant,
+      motivo,
+      usuario_id: req.usuario.id
+    });
+    await client.query("COMMIT");
+    res.json({ stock_actual: stockActual });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    await client.query("ROLLBACK");
+    res.status(400).json({ error: err.message });
+  } finally {
+    client.release();
   }
 });
 
-// PUT /api/productos/variantes/:varianteId/stock
-// body: { sucursal_id, cantidad } — fija la cantidad absoluta (ajuste de stock)
-productosRouter.put("/variantes/:varianteId/stock", soloAdmin, async (req, res) => {
-  const { sucursal_id, cantidad } = req.body;
-  if (sucursal_id === undefined || cantidad === undefined || cantidad < 0) {
-    return res.status(400).json({ error: "sucursal_id y cantidad (>= 0) son obligatorios." });
-  }
+// GET /api/variantes/:id/movimientos — historial de una variante puntual.
+productosRouter.get("/variantes/:id/movimientos", requiereAuth, async (req, res) => {
   try {
     const { rows } = await pool.query(
-      `INSERT INTO stock (variante_id, sucursal_id, cantidad) VALUES ($1,$2,$3)
-       ON CONFLICT (variante_id, sucursal_id) DO UPDATE SET cantidad = EXCLUDED.cantidad
-       RETURNING *`,
-      [req.params.varianteId, sucursal_id, cantidad]
+      `SELECT m.*, u.nombre AS usuario_nombre FROM movimientos_stock m
+       LEFT JOIN usuarios u ON u.id = m.usuario_id
+       WHERE m.variante_id = $1 ORDER BY m.creado_en DESC`,
+      [req.params.id]
     );
-    res.json(rows[0]);
+    res.json(rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

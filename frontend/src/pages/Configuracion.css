@@ -1,0 +1,4 @@
+.config-form { max-width: 480px; margin-bottom: 16px; }
+.config-mp-nota { max-width: 480px; margin-bottom: 16px; }
+.config-mp-nota p { font-size: 13px; color: var(--color-text-muted); line-height: 1.5; }
+.config-mp-nota code { background: var(--color-bg); padding: 1px 5px; border-radius: 4px; }

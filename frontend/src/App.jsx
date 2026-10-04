@@ -1,72 +1,38 @@
-import { Routes, Route, Navigate } from "react-router-dom";
-import LayoutPublico from "./components/LayoutPublico.jsx";
-import LayoutStaff from "./components/LayoutStaff.jsx";
-import RutaProtegida from "./components/RutaProtegida.jsx";
-import RutaProtegidaCliente from "./components/RutaProtegidaCliente.jsx";
-
-// Público
-import Home from "./pages/publico/Home.jsx";
-import Catalogo from "./pages/publico/Catalogo.jsx";
-import ProductoDetalle from "./pages/publico/ProductoDetalle.jsx";
-import Checkout from "./pages/publico/Checkout.jsx";
-import PedidoEstado from "./pages/publico/PedidoEstado.jsx";
-
-// Cliente
-import LoginCliente from "./pages/cliente/LoginCliente.jsx";
-import MisPedidos from "./pages/cliente/MisPedidos.jsx";
-
-// Staff
-import LoginStaff from "./pages/vendedor/LoginStaff.jsx";
-import PantallaVenta from "./pages/vendedor/PantallaVenta.jsx";
-import PanelAdmin from "./pages/admin/PanelAdmin.jsx";
-
-function Publica(pagina) {
-  return <LayoutPublico>{pagina}</LayoutPublico>;
-}
+import { Routes, Route } from "react-router-dom";
+import Layout from "./components/Layout.jsx";
+import { RutaProtegida, RutaAdmin } from "./components/RutaProtegida.jsx";
+import Login from "./pages/Login.jsx";
+import Dashboard from "./pages/Dashboard.jsx";
+import Venta from "./pages/Venta.jsx";
+import Ventas from "./pages/Ventas.jsx";
+import Productos from "./pages/Productos.jsx";
+import ProductoNuevo from "./pages/ProductoNuevo.jsx";
+import ProductoDetalle from "./pages/ProductoDetalle.jsx";
+import Categorias from "./pages/Categorias.jsx";
+import Usuarios from "./pages/Usuarios.jsx";
+import Configuracion from "./pages/Configuracion.jsx";
 
 export default function App() {
   return (
     <Routes>
-      {/* Tienda online */}
-      <Route path="/" element={Publica(<Home />)} />
-      <Route path="/catalogo" element={Publica(<Catalogo />)} />
-      <Route path="/producto/:id" element={Publica(<ProductoDetalle />)} />
-      <Route path="/checkout" element={Publica(<Checkout />)} />
-      <Route path="/pedido/:id" element={Publica(<PedidoEstado />)} />
-      <Route path="/ingresar" element={Publica(<LoginCliente />)} />
-      <Route
-        path="/mi-cuenta/pedidos"
-        element={Publica(
-          <RutaProtegidaCliente>
-            <MisPedidos />
-          </RutaProtegidaCliente>
-        )}
-      />
+      <Route path="/login" element={<Login />} />
 
-      {/* Panel interno (staff) */}
-      <Route path="/staff/login" element={<LoginStaff />} />
-      <Route
-        path="/staff/venta"
-        element={
-          <RutaProtegida>
-            <LayoutStaff>
-              <PantallaVenta />
-            </LayoutStaff>
-          </RutaProtegida>
-        }
-      />
-      <Route
-        path="/staff/admin/*"
-        element={
-          <RutaProtegida rolesPermitidos={["admin"]}>
-            <LayoutStaff>
-              <PanelAdmin />
-            </LayoutStaff>
-          </RutaProtegida>
-        }
-      />
+      <Route element={<RutaProtegida />}>
+        <Route element={<Layout />}>
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/venta" element={<Venta />} />
+          <Route path="/ventas" element={<Ventas />} />
+          <Route path="/productos" element={<Productos />} />
+          <Route path="/productos/:id" element={<ProductoDetalle />} />
+          <Route path="/categorias" element={<Categorias />} />
 
-      <Route path="*" element={<Navigate to="/" replace />} />
+          <Route element={<RutaAdmin />}>
+            <Route path="/productos/nuevo" element={<ProductoNuevo />} />
+            <Route path="/usuarios" element={<Usuarios />} />
+            <Route path="/configuracion" element={<Configuracion />} />
+          </Route>
+        </Route>
+      </Route>
     </Routes>
   );
 }

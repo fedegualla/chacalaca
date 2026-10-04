@@ -2,85 +2,31 @@ import { Router } from "express";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { pool } from "../db/pool.js";
-import { requiereAuth, requiereRol } from "../middleware/auth.js";
+import { requiereAuth } from "../middleware/auth.js";
 
 export const authRouter = Router();
 
-// POST /api/auth/login  (staff: admin/vendedor)
-// body: { email, password }
+// POST /api/auth/login
 authRouter.post("/login", async (req, res) => {
   const { email, password } = req.body;
-
   try {
     const { rows } = await pool.query(
-      `SELECT u.id, u.nombre, u.email, u.password_hash, u.rol, u.sucursal_id, u.activo,
-              s.nombre AS sucursal_nombre
-       FROM usuarios u
-       LEFT JOIN sucursales s ON s.id = u.sucursal_id
-       WHERE u.email = $1`,
+      "SELECT * FROM usuarios WHERE email = $1 AND activo = true",
       [email]
     );
     const usuario = rows[0];
-
-    if (!usuario || !usuario.activo) {
-      return res.status(401).json({ error: "Usuario o contraseña incorrectos." });
+    if (!usuario || !(await bcrypt.compare(password || "", usuario.password_hash))) {
+      return res.status(401).json({ error: "Email o contraseña incorrectos." });
     }
-
-    const coincide = await bcrypt.compare(password, usuario.password_hash);
-    if (!coincide) {
-      return res.status(401).json({ error: "Usuario o contraseña incorrectos." });
-    }
-
-    const token = jwt.sign(
-      { tipo: "staff", id: usuario.id, rol: usuario.rol, sucursal_id: usuario.sucursal_id },
-      process.env.JWT_SECRET,
-      { expiresIn: "12h" }
-    );
-
-    res.json({
-      token,
-      usuario: {
-        id: usuario.id,
-        nombre: usuario.nombre,
-        email: usuario.email,
-        rol: usuario.rol,
-        sucursal_id: usuario.sucursal_id,
-        sucursal_nombre: usuario.sucursal_nombre
-      }
-    });
+    const payload = { id: usuario.id, nombre: usuario.nombre, email: usuario.email, rol: usuario.rol };
+    const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: "12h" });
+    res.json({ token, usuario: payload });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// POST /api/auth/usuarios  (solo un admin puede crear cuentas de staff nuevas)
-// body: { nombre, email, password, rol, sucursal_id }
-authRouter.post("/usuarios", requiereAuth, requiereRol("admin"), async (req, res) => {
-  const { nombre, email, password, rol, sucursal_id } = req.body;
-  try {
-    const password_hash = await bcrypt.hash(password, 10);
-    const { rows } = await pool.query(
-      `INSERT INTO usuarios (nombre, email, password_hash, rol, sucursal_id)
-       VALUES ($1,$2,$3,$4,$5)
-       RETURNING id, nombre, email, rol, sucursal_id`,
-      [nombre, email, password_hash, rol, sucursal_id]
-    );
-    res.status(201).json(rows[0]);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// GET /api/auth/usuarios — listado de staff, solo admin
-authRouter.get("/usuarios", requiereAuth, requiereRol("admin"), async (req, res) => {
-  try {
-    const { rows } = await pool.query(
-      `SELECT u.id, u.nombre, u.email, u.rol, u.sucursal_id, u.activo, s.nombre AS sucursal_nombre
-       FROM usuarios u LEFT JOIN sucursales s ON s.id = u.sucursal_id
-       ORDER BY u.nombre`
-    );
-    res.json(rows);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+// GET /api/auth/yo — valida el token y devuelve el usuario actual
+authRouter.get("/yo", requiereAuth, (req, res) => {
+  res.json({ usuario: req.usuario });
 });

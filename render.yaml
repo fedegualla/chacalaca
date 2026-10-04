@@ -17,8 +17,6 @@ services:
         generateValue: true
       - key: APP_BASE_URL
         sync: false
-      - key: FRONT_BASE_URL
-        sync: false
       - key: MP_ACCESS_TOKEN
         sync: false
       - key: MP_WEBHOOK_SECRET

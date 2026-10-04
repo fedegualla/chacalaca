@@ -1,0 +1,2 @@
+.usuarios-form { max-width: 640px; margin-bottom: 16px; }
+.usuarios-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }

@@ -1,0 +1,3 @@
+.categorias-form { display: flex; gap: 10px; margin-bottom: 16px; }
+.categorias-form .input { flex: 1; }
+.categorias-acciones { display: flex; gap: 8px; justify-content: flex-end; }

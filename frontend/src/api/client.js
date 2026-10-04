@@ -1,12 +1,27 @@
-export function apiFetch(path, options = {}) {
-  // El mismo navegador puede tener a la vez una sesión de cliente (tienda
-  // online) y una de staff (panel interno) — se elige el token según la
-  // sección en la que está parado, no cuál se logueó último.
-  const enPanelStaff = window.location.pathname.startsWith("/staff");
-  const token = enPanelStaff
-    ? localStorage.getItem("token_staff")
-    : localStorage.getItem("token_cliente");
-  return fetch(`/api${path}`, {
+const TOKEN_KEY = "chacalaca_token";
+const USUARIO_KEY = "chacalaca_usuario";
+
+export function guardarSesion(token, usuario) {
+  localStorage.setItem(TOKEN_KEY, token);
+  localStorage.setItem(USUARIO_KEY, JSON.stringify(usuario));
+}
+
+export function cerrarSesion() {
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(USUARIO_KEY);
+}
+
+export function usuarioActual() {
+  try {
+    return JSON.parse(localStorage.getItem(USUARIO_KEY));
+  } catch {
+    return null;
+  }
+}
+
+export async function apiJson(path, options = {}) {
+  const token = localStorage.getItem(TOKEN_KEY);
+  const res = await fetch(`/api${path}`, {
     ...options,
     headers: {
       "Content-Type": "application/json",
@@ -14,49 +29,23 @@ export function apiFetch(path, options = {}) {
       ...options.headers
     }
   });
-}
 
-export async function apiJson(path, options = {}) {
-  const res = await apiFetch(path, options);
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || "Ocurrió un error inesperado.");
+  if (res.status === 401) {
+    cerrarSesion();
+    window.location.href = "/login";
+    throw new Error("Sesión vencida.");
+  }
+
+  const texto = await res.text();
+  const data = texto ? JSON.parse(texto) : null;
+  if (!res.ok) throw new Error(data?.error || "Ocurrió un error inesperado.");
   return data;
 }
 
-// ---------- Sesión de staff (admin/vendedor) ----------
-
-export function usuarioStaff() {
-  const raw = localStorage.getItem("usuario_staff");
-  return raw ? JSON.parse(raw) : null;
-}
-
-export function guardarSesionStaff(token, usuario) {
-  localStorage.setItem("token_staff", token);
-  localStorage.setItem("usuario_staff", JSON.stringify(usuario));
-}
-
-export function cerrarSesionStaff() {
-  localStorage.removeItem("token_staff");
-  localStorage.removeItem("usuario_staff");
-}
-
-// ---------- Sesión de cliente (tienda online) ----------
-
-export function clienteActual() {
-  const raw = localStorage.getItem("cliente");
-  return raw ? JSON.parse(raw) : null;
-}
-
-export function guardarSesionCliente(token, cliente) {
-  localStorage.setItem("token_cliente", token);
-  localStorage.setItem("cliente", JSON.stringify(cliente));
-}
-
-export function cerrarSesionCliente() {
-  localStorage.removeItem("token_cliente");
-  localStorage.removeItem("cliente");
-}
-
 export function formatoPrecio(valor) {
-  return Number(valor).toLocaleString("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 });
+  return new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS" }).format(Number(valor) || 0);
+}
+
+export function formatoFecha(valor) {
+  return new Date(valor).toLocaleString("es-AR", { dateStyle: "short", timeStyle: "short" });
 }

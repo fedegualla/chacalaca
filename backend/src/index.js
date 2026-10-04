@@ -1,34 +1,32 @@
+import "dotenv/config";
 import express from "express";
 import cors from "cors";
-import dotenv from "dotenv";
-import path from "path";
 import { fileURLToPath } from "url";
+import { dirname, join } from "path";
 import { apiRouter } from "./routes/index.js";
 
-dotenv.config();
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const frontendDist = path.join(__dirname, "../../frontend/dist");
-
+const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
+
 app.use(cors());
+// El webhook de Mercado Pago necesita el body crudo disponible como JSON igual
+// que el resto; express.json() alcanza porque MP manda Content-Type: application/json.
 app.use(express.json());
 
 app.get("/health", (req, res) => res.json({ ok: true }));
 app.use("/api", apiRouter);
 
-// En producción el build del frontend se sirve desde el mismo servicio
-// (un solo deploy en Render, sin CORS entre frontend y backend). En local
-// cada uno corre por su lado (vite en :5173 con proxy a :4000), así que
-// frontend/dist ni siquiera existe todavía.
-app.use(express.static(frontendDist));
-app.get(/^(?!\/api|\/health).*/, (req, res) => {
-  res.sendFile(path.join(frontendDist, "index.html"), (err) => {
-    if (err) res.status(404).send("Frontend no compilado (correr npm run build).");
-  });
+// En producción, este mismo servidor sirve el build del frontend (ver render.yaml).
+const distPath = join(__dirname, "../../frontend/dist");
+if (process.env.NODE_ENV === "production") {
+  app.use(express.static(distPath));
+  app.get("*", (req, res) => res.sendFile(join(distPath, "index.html")));
+}
+
+app.use((err, req, res, next) => {
+  console.error(err);
+  res.status(500).json({ error: "Error interno del servidor." });
 });
 
-const PORT = process.env.PORT || 4000;
-app.listen(PORT, () => {
-  console.log(`Servidor corriendo en el puerto ${PORT}`);
-});
+const port = process.env.PORT || 4000;
+app.listen(port, () => console.log(`Chacalaca backend escuchando en :${port}`));

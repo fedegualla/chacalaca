@@ -1,5 +1,6 @@
 import { MercadoPagoConfig, Preference, Payment } from "mercadopago";
 import crypto from "crypto";
+import QRCode from "qrcode";
 
 const accessToken = process.env.MP_ACCESS_TOKEN;
 
@@ -14,31 +15,30 @@ function requiereCliente() {
   return client;
 }
 
-// Crea el link/QR de cobro para un pedido puntual. external_reference = id del
-// pedido, así el webhook sabe a qué pedido corresponde el pago que llegue.
-export async function crearPreferenciaPago({ pedidoId, total, descripcion }) {
+// Crea el link de cobro para una venta puntual. external_reference = id de la
+// venta, así el webhook sabe a qué venta corresponde el pago que llegue.
+export async function crearPreferenciaPago({ ventaId, total, descripcion }) {
   const preference = new Preference(requiereCliente());
   const base = process.env.APP_BASE_URL?.replace(/\/$/, "");
-  const front = (process.env.FRONT_BASE_URL || process.env.APP_BASE_URL || "").replace(/\/$/, "");
   const notificationUrl = base ? `${base}/api/mercadopago/webhook` : undefined;
 
   const { body } = await preference.create({
     body: {
       items: [
         {
-          title: descripcion || `Pedido #${pedidoId}`,
+          title: descripcion || `Venta #${ventaId}`,
           quantity: 1,
           unit_price: Number(total),
           currency_id: "ARS"
         }
       ],
-      external_reference: String(pedidoId),
+      external_reference: String(ventaId),
       notification_url: notificationUrl,
-      back_urls: front
+      back_urls: base
         ? {
-            success: `${front}/pedido/${pedidoId}`,
-            pending: `${front}/pedido/${pedidoId}`,
-            failure: `${front}/pedido/${pedidoId}`
+            success: `${base}/api/mercadopago/volver/${ventaId}`,
+            pending: `${base}/api/mercadopago/volver/${ventaId}`,
+            failure: `${base}/api/mercadopago/volver/${ventaId}`
           }
         : undefined
     }
@@ -50,12 +50,29 @@ export async function crearPreferenciaPago({ pedidoId, total, descripcion }) {
   };
 }
 
+// Genera el QR (como data URL PNG) que el cliente escanea desde la app de
+// Mercado Pago para pagar el link de cobro.
+export async function generarQrDataUrl(url) {
+  return QRCode.toDataURL(url, { margin: 1, width: 280 });
+}
+
 // Trae el estado real de un pago desde la API de Mercado Pago (nunca confiamos
 // en lo que diga el webhook sin volver a consultar).
 export async function consultarPago(paymentId) {
   const payment = new Payment(requiereCliente());
   const { body } = await payment.get({ id: paymentId });
   return body;
+}
+
+// Busca el pago más reciente asociado a una preferencia/venta, usado por el
+// botón "verificar pago" del POS para no depender solo del webhook.
+export async function buscarUltimoPagoPorReferencia(externalReference) {
+  const payment = new Payment(requiereCliente());
+  const { results } = await payment.search({
+    options: { criteria: "desc", sort: "date_created" },
+    qs: { external_reference: externalReference }
+  });
+  return results?.[0] || null;
 }
 
 // Valida la firma x-signature que manda Mercado Pago en cada webhook.
