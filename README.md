@@ -61,19 +61,26 @@ configura desde `/configuracion`.
 - `/usuarios` — alta y baja de personal (solo admin)
 - `/configuracion` — datos del local, descuentos y formato de ticket (solo admin)
 
-## Deploy
+## Deploy (gratis, sin perder datos)
 
-Pensado para desplegar gratis en Render con `render.yaml` (un solo Web Service que sirve el
-build del frontend + la API, más una base de datos Postgres free). Para desplegar:
+Se usa Render para el servidor y **Neon** para la base de datos, en vez del Postgres gratis de
+Render — el de Render se borra solo a los 90 días si no lo pagás; el de Neon no.
 
-1. Conectá este repositorio desde el dashboard de Render ("New" → "Blueprint") — Render lee
-   `render.yaml` y crea el Web Service y la base de datos Postgres automáticamente.
-2. Completá en Render las variables marcadas `sync: false` (`APP_BASE_URL` con la URL que te
-   asigna Render, `MP_ACCESS_TOKEN`, `MP_WEBHOOK_SECRET`).
-3. Corré las migraciones contra esa base la primera vez: desde tu PC, con el `DATABASE_URL`
-   externo que te muestra Render para la base de datos, ejecutá `npm run migrate` y
-   `npm run seed` dentro de `backend/`.
+1. **Base de datos (Neon)**:
+   - Creá una cuenta gratis en [neon.tech](https://neon.tech) y un proyecto nuevo.
+   - Copiá el "Connection string" que te dan (incluye `?sslmode=require`).
+   - Desde tu PC, con ese `DATABASE_URL` en `backend/.env`, corré `npm run migrate` y
+     `npm run seed` dentro de `backend/` para crear las tablas y los usuarios iniciales.
+2. **Servidor (Render)**:
+   - Conectá este repositorio desde el dashboard de Render ("New" → "Blueprint") — Render lee
+     `render.yaml` y crea el Web Service automáticamente (sin base de datos propia).
+   - Completá en Render las variables marcadas `sync: false`:
+     - `DATABASE_URL`: el connection string de Neon del paso anterior.
+     - `APP_BASE_URL`: la URL que te asigna Render (ej. `https://chacalaca.onrender.com`).
+     - `MP_ACCESS_TOKEN` y `MP_WEBHOOK_SECRET`: tus credenciales de Mercado Pago.
 
-El plan free de Render "duerme" el servicio sin tráfico y lo despierta (con demora) en el primer
-pedido; para un local que usa el sistema en vivo durante el día esto puede notarse al abrir la
-pantalla de venta a primera hora.
+El plan free de Render "duerme" el servicio sin tráfico y lo despierta (con demora de unos
+segundos) en el primer pedido; para un local que abre a una hora fija, el primer cobro del día
+puede tardar un poco más que el resto. Neon no tiene ese problema de arranque y los datos quedan
+guardados indefinidamente mientras el proyecto esté dentro del límite gratuito (0.5 GB), más que
+suficiente para este sistema.
