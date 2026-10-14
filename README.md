@@ -46,9 +46,28 @@ directamente a la API de Mercado Pago sin depender del webhook.
 ## Impresora de tickets
 
 No hace falta ningún software extra: conectá la impresora térmica a la PC del local como una
-impresora común de Windows (la mayoría de las impresoras de tickets traen su propio driver) y
-elegila en el diálogo que abre el navegador al imprimir. El ancho del papel (58mm u 80mm) se
-configura desde `/configuracion`.
+impresora común de Windows (la mayoría de las impresoras de tickets traen su propio driver). El
+ticket se imprime solo apenas se aprueba el pago de una venta (efectivo/transferencia al toque, o
+Mercado Pago cuando se confirma el cobro) — no hace falta tocar ningún botón. El ancho del papel
+(58mm u 80mm) se configura desde `/configuracion`.
+
+Para que salga **directo a la impresora, sin ningún diálogo de Windows**, la PC del local tiene
+que abrir el sistema con Chrome en modo "kiosk printing":
+
+1. Elegí la impresora térmica como **impresora predeterminada** de Windows
+   (Configuración → Impresoras y escáneres).
+2. Creá un acceso directo a Chrome (clic derecho sobre uno existente → Copiar, Pegar) y editá
+   sus propiedades → pestaña Acceso directo → campo "Destino": agregá `--kiosk-printing` al
+   final, quedando algo así:
+   ```
+   "C:\Program Files\Google\Chrome\Application\chrome.exe" --kiosk-printing
+   ```
+3. Abrí Chacalaca siempre desde ese acceso directo (en esa pestaña, no en una ventana de Chrome
+   ya abierta de otra forma).
+
+Con eso, cada venta imprime el ticket automáticamente en la impresora predeterminada, sin
+diálogos ni clicks extra. Si se usa un Chrome "normal" (sin ese flag), igual funciona, pero va a
+aparecer el diálogo de impresión de Windows una vez por venta.
 
 ## Rutas principales
 

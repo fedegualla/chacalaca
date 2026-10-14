@@ -3,6 +3,10 @@
 -- Esquema de base de datos PostgreSQL (un solo local)
 -- =========================================================
 
+-- Para que la búsqueda de productos encuentre "pantalon" aunque el nombre
+-- tenga tilde ("Pantalón"): ver unaccent() en productos.js.
+CREATE EXTENSION IF NOT EXISTS unaccent;
+
 CREATE TYPE rol_usuario AS ENUM ('admin', 'vendedor');
 
 CREATE TABLE usuarios (

@@ -15,7 +15,7 @@ productosRouter.get("/", requiereAuth, async (req, res) => {
        FROM productos p
        LEFT JOIN categorias c ON c.id = p.categoria_id
        LEFT JOIN variantes_producto v ON v.producto_id = p.id AND v.activo = true
-       WHERE ($1 = '' OR p.nombre ILIKE '%' || $1 || '%' OR p.marca ILIKE '%' || $1 || '%')
+       WHERE ($1 = '' OR unaccent(p.nombre) ILIKE unaccent('%' || $1 || '%') OR unaccent(p.marca) ILIKE unaccent('%' || $1 || '%'))
          AND ($2 = '' OR p.categoria_id = $2::int)
          AND ($3 = 'false' OR p.activo = true)
        GROUP BY p.id, c.nombre

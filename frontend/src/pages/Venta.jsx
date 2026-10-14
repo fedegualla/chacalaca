@@ -25,6 +25,7 @@ export default function Venta() {
   const [verificando, setVerificando] = useState(false);
   const [error, setError] = useState("");
   const [ventaParaImprimir, setVentaParaImprimir] = useState(null);
+  const [ventaIdImpresa, setVentaIdImpresa] = useState(null);
 
   useEffect(() => { apiJson("/configuracion").then(setConfig).catch(() => {}); }, []);
 
@@ -90,6 +91,7 @@ export default function Venta() {
     setClienteTelefono("");
     setFormaPago("efectivo");
     setError("");
+    setVentaIdImpresa(null);
   }
 
   async function confirmarVenta() {
@@ -131,6 +133,17 @@ export default function Venta() {
   function imprimirTicket() {
     setVentaParaImprimir(ventaActual);
   }
+
+  // Apenas el pago queda aprobado (al toque en efectivo/transferencia, o cuando
+  // se confirma el cobro de Mercado Pago) se imprime solo, sin que el vendedor
+  // tenga que tocar nada. Si el navegador de la PC del local está configurado
+  // con --kiosk-printing, esto sale directo a la impresora sin diálogo.
+  useEffect(() => {
+    if (ventaActual?.estado_pago === "aprobado" && ventaIdImpresa !== ventaActual.id) {
+      setVentaParaImprimir(ventaActual);
+      setVentaIdImpresa(ventaActual.id);
+    }
+  }, [ventaActual, ventaIdImpresa]);
 
   useEffect(() => {
     if (!ventaParaImprimir) return;
@@ -281,7 +294,7 @@ function VentaConfirmada({ venta, onVerificar, verificando, onImprimir, onNuevaV
       {venta.estado_pago === "rechazado" && <p className="error-text">El pago fue rechazado.</p>}
 
       <button className="pill-btn pill-btn-primary pill-btn-block" onClick={onImprimir} disabled={pendiente}>
-        Imprimir ticket
+        Reimprimir ticket
       </button>
       <button className="pill-btn pill-btn-ghost pill-btn-block" onClick={onNuevaVenta}>
         Nueva venta

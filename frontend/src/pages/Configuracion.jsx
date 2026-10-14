@@ -78,9 +78,11 @@ export default function Configuracion() {
       <div className="card config-mp-nota">
         <h4>Impresión de tickets</h4>
         <p>
-          El ticket se imprime con el diálogo de impresión del navegador: conectá la impresora
-          térmica a la PC como una impresora normal de Windows y elegila en ese diálogo
-          (convenís dejarla como predeterminada para no tener que elegirla cada vez).
+          El ticket se imprime solo apenas se aprueba el pago de una venta, sin tocar ningún
+          botón. Conectá la impresora térmica a la PC como impresora normal de Windows y dejala
+          como predeterminada. Para que salga directo, sin el diálogo de impresión de Windows,
+          abrí el sistema con Chrome lanzado con <code>--kiosk-printing</code> (ver README,
+          sección "Impresora de tickets").
         </p>
       </div>
     </div>
